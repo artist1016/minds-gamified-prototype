@@ -1,7 +1,7 @@
 
 # 🎮 BoomTap: Gamified Micro-Loop Prototype for Minds
 
-> **🎯&#x20;**&#xD83C;� BoomTap: Gamified Micro-Loop Prototype for Minds
+> **🎯 BoomTap: Gamified Micro-Loop Prototype for Minds
 >
 > [[Play](https://3iyn7j.kicp.fun/))  
 
