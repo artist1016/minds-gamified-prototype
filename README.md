@@ -1,3 +1,4 @@
+
 # 🎮 BoomTap: Gamified Micro-Loop Prototype for Minds
 
 > **🎯&#x20;**&#xD83C;� BoomTap: Gamified Micro-Loop Prototype for Minds
@@ -6,7 +7,7 @@
 > [[Feishu Portfolio](https://hcnazkqtqx69.feishu.cn/wiki/M4Amwp68Hi8E6vkwVlAcgBUmnFf)  
 > [[LinkedIn](https://www.linkedin.com/in/alex-dai01)
 
-<img src="./https://github.com/artist1016/minds-gamified-prototype/blob/main/demo-screenshot.png" width="100%" alt="BoomTap Demo Screenshot" />
+![Uploading demo-screenshot.png…]()
 
 ## 💡 Context & Objective
 
