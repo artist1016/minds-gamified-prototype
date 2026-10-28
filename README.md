@@ -2,9 +2,9 @@
 
 > **🎯&#x20;**&#xD83C;� BoomTap: Gamified Micro-Loop Prototype for Minds
 >
-> [[Play Demo](https://img.shields.io/badge/🎮_Play_The_Demo-Live_on_GitHub-2ea44f?style=for-the-badge)](https://\[你的GitHub用户名].github.io/\[你的仓库名]/)  
-> [[Feishu Portfolio](https://img.shields.io/badge/📁_Full_Case_Study-Feishu_Portfolio-blue?style=for-the-badge)](https://hcnazkqtqx69.feishu.cn/wiki/M4Amwp68Hi8E6vkwVlAcgBUmnFf)  
-> [[LinkedIn](https://img.shields.io/badge/Connect-LinkedIn-0077B5?style=for-the-badge\&logo=linkedin)](https://www.linkedin.com/in/alex-dai01)
+> [[Play Demo](https://github.com/artist1016/minds-gamified-prototype)  
+> [[Feishu Portfolio](https://hcnazkqtqx69.feishu.cn/wiki/M4Amwp68Hi8E6vkwVlAcgBUmnFf)  
+> [[LinkedIn](https://www.linkedin.com/in/alex-dai01)
 
 ## 💡 Context & Objective
 
