@@ -7,7 +7,7 @@
 > [[Feishu Portfolio](https://hcnazkqtqx69.feishu.cn/wiki/M4Amwp68Hi8E6vkwVlAcgBUmnFf)  
 > [[LinkedIn](https://www.linkedin.com/in/alex-dai01)
 
-(https://cdn.jsdelivr.net/gh/artist1016/minds-gamified-prototype@main/demo-screenshot.png)
+<img src="https://cdn.jsdelivr.net/gh/artist1016/minds-gamified-prototype@main/demo-screenshot.png" width="100%" alt="BoomTap Demo Screenshot" />
 
 ## 💡 Context & Objective
 
