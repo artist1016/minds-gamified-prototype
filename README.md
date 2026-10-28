@@ -6,6 +6,8 @@
 > [[Feishu Portfolio](https://hcnazkqtqx69.feishu.cn/wiki/M4Amwp68Hi8E6vkwVlAcgBUmnFf)  
 > [[LinkedIn](https://www.linkedin.com/in/alex-dai01)
 
+<img src="./demo-screenshot.png" width="100%" alt="BoomTap Demo Screenshot" />
+
 ## 💡 Context & Objective
 
 As a candidate for the **GTM AI Product Manager** role at Animoca Brands, I didn't want to just write a traditional product teardown. Instead, I took an **AI-native** approach to validate the product hypothesis: *How can Minds turn real-world tasks into an addictive, lightweight gamified experience?*
