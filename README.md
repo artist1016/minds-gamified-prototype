@@ -1,7 +1,10 @@
 # 🎮 BoomTap: Gamified Micro-Loop Prototype for Minds
 
-> **🎯 Playable Demo (Live):** [👉 Click here to play in your browser](https://github.com/artist1016/minds-gamified-prototype)  
-> *(Note: Best experienced on mobile with touch interaction or desktop with mouse/spacebar)*
+> **🎯&#x20;**&#xD83C;� BoomTap: Gamified Micro-Loop Prototype for Minds
+>
+> [[Play Demo](https://img.shields.io/badge/🎮_Play_The_Demo-Live_on_GitHub-2ea44f?style=for-the-badge)](https://\[你的GitHub用户名].github.io/\[你的仓库名]/)  
+> [[Feishu Portfolio](https://img.shields.io/badge/📁_Full_Case_Study-Feishu_Portfolio-blue?style=for-the-badge)](https://hcnazkqtqx69.feishu.cn/wiki/M4Amwp68Hi8E6vkwVlAcgBUmnFf)  
+> [[LinkedIn](https://img.shields.io/badge/Connect-LinkedIn-0077B5?style=for-the-badge\&logo=linkedin)](https://www.linkedin.com/in/alex-dai01)
 
 ## 💡 Context & Objective
 
@@ -32,5 +35,4 @@ A game is only as good as its data. The prototype is pre-wired with **17 trackin
 
 ---
 
-*Built with an AI-native mindset by Alex.*  
-*Connect with me on [LinkedIn](https://www.linkedin.com/in/alex-dai01) or check out my [Full Portfolio](https://hcnazkqtqx69.feishu.cn/wiki/M4Amwp68Hi8E6vkwVlAcgBUmnFf).*
+*Built with an AI-native mindset by Alex.*
