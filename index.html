@@ -1,0 +1,1097 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0d1117">
+<title>BoomTap · 点准就是钱</title>
+<style>
+/* ======================================================================
+   BoomTap v1.4.0 - single file demo. No external assets, no network.
+   Layout: Flex fullscreen, zero scroll, three-flow skeleton
+     #app (flex column, 100vw x 100vh)
+       #hud      top HUD (stardust | best combo)
+       #game-area flex:1 centered stage (ring + canvas + tap button)
+       #footer   progress + Claim (width:100%, max-width:300px)
+   Feel: spring pop cubic-bezier(.175,.885,.32,1.275), transition-all
+         .3s ease-in-out everywhere, number count-up, combo particle halo,
+         big radii (20px+), soft dark gradient.
+   Judgement: window 200-300ms, whole-screen tap, delta-time ring speed,
+         first 3 rounds newbie protection (shrink speed halved).
+   Audio: Web Audio synth - hit = rising "ding", miss = low "buzz".
+   ====================================================================== */
+:root{
+  --spring:cubic-bezier(.175,.885,.32,1.275);
+  --green:#58cc02;--green-d:#3f9b00;
+  --gold:#ffc93c;--gold-d:#c98a00;
+  --blue:#1cb0f6;--blue-d:#1590cc;
+  --red:#ff4b4b;--red-d:#c62f2f;
+  --ink:#2b3a55;--ink-2:#8494ae;
+  --footer-h:165px;
+  --btn:150px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{
+  width:100%;height:100%;
+  overflow:hidden;
+  background:#0d1117;
+  font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans CJK SC","Source Han Sans SC",system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  color:#fff;-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent
+}
+body{position:fixed;inset:0;user-select:none;-webkit-user-select:none;touch-action:manipulation;overscroll-behavior:none}
+button{font-family:inherit}
+/* smooth everything - zero specificity, component rules win over it */
+:where(#app *){transition:all .3s ease-in-out}
+#app{position:relative;overflow:hidden;isolation:isolate}
+@supports (height:100dvh){#app{height:100dvh!important}}
+#bg{position:absolute;inset:0;z-index:0;background:radial-gradient(130% 95% at 50% -12%,#2b4179 0%,#1a2c56 44%,#0d1117 100%)}
+#bg::after{content:'';position:absolute;inset:0;background:radial-gradient(55% 38% at 50% 46%,rgba(88,204,2,.09),transparent 72%)}
+/* ---------- 1. top HUD ---------- */
+.hud{align-items:center;gap:9px;pointer-events:none;flex:0 0 auto;min-height:0}
+/* ---------- 2. game area ---------- */
+#game-area{flex-direction:column;gap:10px;min-height:0;overflow:visible}
+#world{position:absolute;inset:0;z-index:1;will-change:transform;pointer-events:none}
+#stage{position:absolute;display:block;left:-40px;top:-40px;pointer-events:none}
+#playArea{position:relative;z-index:5;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;pointer-events:none;max-width:96%}
+/* ---------- 3. footer ---------- */
+#footer{flex:0 0 auto;min-height:0}
+.prog-wrap{width:100%;max-width:300px;margin:0 auto;pointer-events:auto}
+.prog{height:17px;border-radius:999px;background:rgba(255,255,255,.13);box-shadow:inset 0 2px 5px rgba(0,0,0,.3);overflow:hidden;border:2px solid rgba(255,255,255,.12)}
+.prog-fill{height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,#ffe08a,#ffb300);box-shadow:0 0 12px rgba(255,190,60,.6);transition:width .3s ease-in-out}
+.prog-fill.no-anim{transition:none}
+.prog-cap{margin-top:5px;font-size:11px;font-weight:700;color:rgba(255,255,255,.55);letter-spacing:.4px;text-align:center}
+/* ---------- tap button ---------- */
+.tap-btn{position:relative;width:var(--btn);height:var(--btn);border:0;background:transparent;padding:0;cursor:pointer;pointer-events:auto;border-radius:50%;
+  box-shadow:0 10px 0 #a86b00,0 18px 30px rgba(0,0,0,.42);
+  transition:transform .3s var(--spring),box-shadow .09s ease;will-change:transform;flex:0 0 auto}
+.tap-btn.press{transform:scale(.86);transition:transform .07s ease-out,box-shadow .07s ease-out}
+.tap-face{position:absolute;inset:0;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(circle at 34% 26%,#ffe694 0%,#ffc93c 36%,#f2a900 74%,#d18700 100%);
+  box-shadow:inset 0 -9px 20px rgba(140,80,0,.38),inset 0 8px 16px rgba(255,255,255,.55),0 2px 0 rgba(255,255,255,.25);
+  animation:idlePulse 2.4s ease-in-out infinite;transition:transform .3s var(--spring)}
+.tap-label{font-weight:900;font-size:clamp(20px,5.2vmin,30px);letter-spacing:2px;color:#8a5200;text-shadow:0 2px 0 rgba(255,255,255,.45);opacity:.92}
+.tap-btn:active{box-shadow:0 4px 0 #a86b00,0 10px 18px rgba(0,0,0,.42)}
+@keyframes idlePulse{0%,100%{transform:scale(1)}50%{transform:scale(1.045)}}
+/* ---------- combo badge ---------- */
+.combo-badge{display:flex;align-items:baseline;gap:6px;font-weight:900;font-size:clamp(30px,8vmin,44px);
+  color:#fff;text-shadow:0 3px 0 rgba(0,0,0,.34),0 0 18px rgba(255,201,60,.35);pointer-events:none;flex:0 0 auto;
+  transform-origin:50% 60%;will-change:transform}
+.combo-x{font-size:.42em;font-weight:800;color:rgba(255,255,255,.65);letter-spacing:2px}
+.combo-badge.pop{animation:comboPop .5s var(--spring)}
+@keyframes comboPop{0%{transform:scale(1)}42%{transform:scale(1.2)}100%{transform:scale(1)}}
+.combo-badge.hot #comboVal{color:#ffc93c;animation:comboBreath 1.3s ease-in-out infinite}
+.combo-badge.hot .combo-x{color:rgba(255,214,102,.9)}
+.combo-badge.hot.pop #comboVal{animation:comboGlow .5s ease-out,comboBreath 1.3s ease-in-out .5s infinite}
+@keyframes comboBreath{0%,100%{text-shadow:0 3px 0 rgba(0,0,0,.34),0 0 10px rgba(255,201,60,.55);filter:brightness(1)}50%{text-shadow:0 3px 0 rgba(0,0,0,.34),0 0 28px rgba(255,214,102,.95);filter:brightness(1.28)}}
+@keyframes comboGlow{0%{text-shadow:0 3px 0 rgba(0,0,0,.34),0 0 34px rgba(255,214,102,.95)}100%{text-shadow:0 3px 0 rgba(0,0,0,.34),0 0 18px rgba(255,201,60,.35)}}
+.combo-badge.bad{animation:comboBad .46s ease;color:#ff7a7a}
+@keyframes comboBad{0%,100%{transform:translateX(0)}18%{transform:translateX(-10px)}38%{transform:translateX(10px)}58%{transform:translateX(-7px)}78%{transform:translateX(7px)}}
+/* combo particle halo */
+.spark{position:fixed;width:9px;height:9px;border-radius:50%;background:#ffe9a8;box-shadow:0 0 10px rgba(255,224,138,.95);pointer-events:none;z-index:70;transform:translate(-50%,-50%);animation:sparkOut .55s var(--spring) forwards}
+@keyframes sparkOut{0%{transform:translate(-50%,-50%) scale(1.15);opacity:1}100%{transform:translate(calc(-50% + var(--tx,0px)),calc(-50% + var(--ty,0px))) scale(.25);opacity:0}}
+.hint{font-size:clamp(12px,3.4vmin,15px);color:rgba(255,255,255,.85);background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.1);padding:8px 15px;border-radius:999px;backdrop-filter:blur(4px);pointer-events:none;max-width:88vw;text-align:center;flex:0 0 auto}
+/* ---------- HUD pills ---------- */
+.pill{display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border-radius:999px;font-weight:800;font-size:clamp(13px,3.6vmin,16px);background:rgba(255,255,255,.12);border:2px solid rgba(255,255,255,.16);box-shadow:0 3px 0 rgba(0,0,0,.22);backdrop-filter:blur(6px);transition:all .3s ease-in-out}
+.pill-gold{background:rgba(255,201,60,.16);border-color:rgba(255,201,60,.45);color:#ffe49a}
+.pill-blue{background:rgba(28,176,246,.14);border-color:rgba(28,176,246,.42);color:#c3ecff}
+.pill-ico{font-size:1.05em;line-height:1}
+.pill-unit{font-size:.72em;font-weight:700;opacity:.8}
+/* ---------- buttons ---------- */
+.btn{border:0;cursor:pointer;font-weight:900;font-size:clamp(15px,4vmin,18px);padding:14px 24px;border-radius:22px;color:#fff;letter-spacing:.6px;pointer-events:auto;box-shadow:0 5px 0 var(--sh);transition:transform .3s var(--spring),box-shadow .3s ease-in-out,filter .3s ease-in-out}
+.btn:active{transform:translateY(4px);box-shadow:0 1px 0 var(--sh);transition:transform .08s ease-out,box-shadow .08s ease-out}
+.btn-green{background:var(--green);--sh:var(--green-d);text-shadow:0 1px 0 rgba(0,0,0,.14)}
+.btn-gold{background:var(--gold);--sh:var(--gold-d);color:#7a4a00}
+.btn-blue{background:var(--blue);--sh:var(--blue-d)}
+.btn-ghost{background:rgba(255,255,255,.14);--sh:rgba(0,0,0,.3);color:#eaf2ff}
+.btn[disabled]{filter:grayscale(.75) brightness(.78);opacity:.7;cursor:not-allowed}
+.btn-lg{font-size:clamp(19px,5.4vmin,24px);padding:18px 54px;border-radius:26px}
+.btn-sm{font-size:14px;padding:10px 18px;border-radius:18px}
+.claim-btn{display:block;width:100%;max-width:300px;margin:10px auto 0}
+.claim-btn.ready{background:linear-gradient(180deg,#6ee000,var(--green));--sh:var(--green-d);color:#fff;animation:readyPulse 1.05s ease-in-out infinite}
+@keyframes readyPulse{0%,100%{transform:scale(1);filter:brightness(1)}50%{transform:scale(1.07);filter:brightness(1.18)}}
+/* ---------- overlays ---------- */
+.overlay{position:absolute;inset:0;z-index:30;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(7,12,26,.72);backdrop-filter:blur(7px);opacity:0;visibility:hidden;pointer-events:none;transition:all .3s ease-in-out}
+.overlay.show{opacity:1;visibility:visible;pointer-events:auto}
+.panel{width:min(94vw,420px);background:#fff;color:var(--ink);border-radius:28px;padding:24px 22px 20px;text-align:center;box-shadow:0 20px 44px rgba(0,0,0,.5);animation:popIn .4s var(--spring);position:relative}
+@keyframes popIn{0%{transform:scale(.86) translateY(14px);opacity:0}100%{transform:scale(1) translateY(0);opacity:1}}
+.logo{font-size:clamp(38px,11vmin,56px);font-weight:900;letter-spacing:-1.5px;color:#ffc93c;text-shadow:0 4px 0 #c98a00,0 10px 22px rgba(201,138,0,.35)}
+.tagline{font-size:clamp(15px,4.2vmin,19px);font-weight:800;color:var(--ink);margin-top:2px}
+.rules{margin:14px 0 16px;font-size:clamp(12px,3.4vmin,14px);font-weight:700;color:#5c6b87;line-height:1.6;background:#f3f6fb;border-radius:18px;padding:10px 12px}
+.title{font-size:clamp(26px,7vmin,34px);font-weight:900;color:var(--ink)}
+.title.bad{color:var(--red)}
+.stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin:16px 0 18px}
+.stat{background:#f3f6fb;border-radius:20px;padding:11px 4px;transition:all .3s ease-in-out}
+.stat-v{font-size:clamp(19px,5.4vmin,25px);font-weight:900;color:var(--ink);line-height:1.1}
+.stat-l{font-size:11px;font-weight:700;color:var(--ink-2);margin-top:3px}
+.btn-row{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+.ctrl-hint{margin-top:14px;font-size:12px;font-weight:700;color:var(--ink-2)}
+/* ---------- record scorecard ---------- */
+.card{position:relative;margin:14px auto 4px;max-width:320px;background:linear-gradient(180deg,#fffdf4,#fff5d2);border:3px solid var(--gold);border-radius:24px;padding:15px 14px 13px;box-shadow:0 12px 26px rgba(0,0,0,.3);animation:cardUp .5s var(--spring)}
+@keyframes cardUp{0%{transform:translateY(46px) scale(.9);opacity:0}100%{transform:translateY(0) scale(1);opacity:1}}
+.card-top{font-size:15px;font-weight:900;color:#b9761a;letter-spacing:1px}
+.card-combo{font-size:clamp(34px,10vmin,46px);font-weight:900;color:#ffb300;line-height:1.05;text-shadow:0 3px 0 rgba(201,138,0,.35)}
+.card-sub{font-size:12px;font-weight:700;color:#8a6a2e;margin-bottom:11px}
+.card-actions{display:flex;gap:8px;justify-content:center}
+.card-badge{display:inline-flex;align-items:center;gap:8px;background:#fff6dd;border:2px solid var(--gold);color:#8a5a00;border-radius:999px;padding:7px 8px 7px 14px;font-weight:900;font-size:13px;margin:14px auto 4px;animation:popIn .3s var(--spring)}
+.mini-btn{border:0;background:var(--gold);color:#7a4a00;font-weight:900;font-size:12px;padding:6px 13px;border-radius:999px;box-shadow:0 3px 0 var(--gold-d);cursor:pointer;transition:transform .3s var(--spring)}
+.mini-btn:active{transform:translateY(2px);box-shadow:0 1px 0 var(--gold-d)}
+/* ---------- claim flow ---------- */
+.claim-overlay{z-index:40}
+.claim-panel{width:min(92vw,380px)}
+.claim-kicker{font-size:13px;font-weight:900;letter-spacing:5px;color:var(--ink-2)}
+.claim-amount-wrap{position:relative;margin:6px 0 4px}
+.claim-amount{font-size:clamp(44px,13vmin,62px);font-weight:900;color:var(--gold-d);line-height:1.15;letter-spacing:-1px;text-shadow:0 3px 0 rgba(201,138,0,.22)}
+.claim-stamp{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(2.4) rotate(-16deg);opacity:0;background:#ff4b4b;color:#fff;font-size:clamp(20px,6vmin,28px);font-weight:900;letter-spacing:4px;padding:8px 18px;border-radius:14px;border:4px solid #fff;box-shadow:0 8px 22px rgba(0,0,0,.35);pointer-events:none}
+.claim-stamp.on{animation:stampIn .42s var(--spring) forwards}
+@keyframes stampIn{0%{opacity:0;transform:translate(-50%,-50%) scale(2.4) rotate(-16deg)}62%{opacity:1;transform:translate(-50%,-50%) scale(.92) rotate(-9deg)}100%{opacity:1;transform:translate(-50%,-50%) scale(1) rotate(-9deg)}}
+.charge{height:14px;border-radius:999px;background:#eef2f9;overflow:hidden;margin:12px 0 9px;box-shadow:inset 0 2px 4px rgba(0,0,0,.08)}
+.charge-fill{height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,#ffe08a,#ffb300);transition:width .3s ease-in-out}
+.claim-msg{font-size:13px;font-weight:800;color:var(--ink-2);min-height:18px}
+/* ---------- toast ---------- */
+.toast-host{position:absolute;left:0;right:0;bottom:calc(var(--footer-h) + 18px);z-index:60;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
+.toast{background:#fff;color:var(--ink);font-weight:900;font-size:14px;padding:12px 20px;border-radius:999px;box-shadow:0 10px 24px rgba(0,0,0,.4);animation:toastIn .3s var(--spring);max-width:88vw;text-align:center;transition:all .3s ease-in-out}
+.toast.toast-gold{background:linear-gradient(180deg,#ffd76a,#ffb300);color:#6b4300}
+.toast.out{opacity:0;transform:translateY(-14px)}
+@keyframes toastIn{0%{transform:translateY(18px) scale(.9);opacity:0}100%{transform:translateY(0) scale(1);opacity:1}}
+@media (max-height:620px){
+  .rules{margin:10px 0 12px;padding:8px 10px}
+  .stat-grid{margin:12px 0 14px}
+  .hint{display:none}
+}
+</style>
+</head>
+<body style='margin: 0; padding: 0; overflow: hidden; background: #0d1117;'>
+<div id='app' style='display: flex; flex-direction: column; width: 100vw; height: 100vh; color: white;'>
+  <div id='bg'></div>
+  <!-- 1. 顶部状态栏 (HUD) -->
+  <header id='hud' class='hud' style='display: flex; justify-content: space-between; padding: 20px; z-index: 10;'>
+    <div class='pill pill-gold'><span class='pill-ico'>★</span><span id='balance'>0</span><span class='pill-unit'>星尘</span></div>
+    <div class='pill pill-blue'><span class='pill-ico'>🏆</span><span id='bestCombo'>0</span><span class='pill-unit'>最佳连击</span></div>
+  </header>
+  <!-- 2. 游戏主区域 (居中) -->
+  <div id='game-area' style='flex: 1; display: flex; justify-content: center; align-items: center; position: relative;'>
+    <div id='world'>
+      <canvas id='stage'></canvas>
+      <div id='playArea'>
+        <div id='comboBadge' class='combo-badge'><span id='comboVal'>0</span><span class='combo-x'>连击</span></div>
+        <button id='tapBtn' class='tap-btn' type='button' aria-label='点击'><span class='tap-face'><span class='tap-label'>TAP</span></span></button>
+        <div id='hint' class='hint'>碰到金圈的瞬间点击！点哪都算 · 空格键也行</div>
+      </div>
+    </div>
+  </div>
+  <!-- 3. 底部按钮区 -->
+  <div id='footer' style='padding: 20px 20px 50px 20px; text-align: center; z-index: 10;'>
+    <div class='prog-wrap'>
+      <div class='prog'><div class='prog-fill' id='progFill'></div></div>
+      <div class='prog-cap'>攒够 1000 星尘即可 Claim</div>
+    </div>
+    <button id='claimBtn' class='btn btn-gold claim-btn' type='button' disabled>Claim</button>
+  </div>
+  <div id='menuOverlay' class='overlay show'>
+    <div class='panel'>
+      <div class='logo'>BoomTap</div>
+      <div class='tagline'>点准就是钱</div>
+      <div class='rules'>碰到金圈就点 · 容错 300ms · 前 3 次新手保护 · 每 5 连击爆币雨 · 攒够 1000 星尘 Claim · 失手 = 本局结束</div>
+      <div class='stat-grid'>
+        <div class='stat'><div class='stat-v' id='menuBest'>0</div><div class='stat-l'>最高连击</div></div>
+        <div class='stat'><div class='stat-v' id='menuClaims'>0</div><div class='stat-l'>Claim 次数</div></div>
+        <div class='stat'><div class='stat-v' id='menuDust'>0</div><div class='stat-l'>星尘</div></div>
+      </div>
+      <button id='startBtn' class='btn btn-green btn-lg' type='button'>开始</button>
+      <div class='ctrl-hint'>点屏幕任意处 ｜ 空格 / 回车</div>
+    </div>
+  </div>
+  <div id='endOverlay' class='overlay'>
+    <div class='panel'>
+      <div class='title bad'>连击断了!</div>
+      <div id='cardSlot'></div>
+      <div class='stat-grid'>
+        <div class='stat'><div class='stat-v' id='endDust'>0</div><div class='stat-l'>本局星尘</div></div>
+        <div class='stat'><div class='stat-v' id='endCombo'>0</div><div class='stat-l'>本局最高连击</div></div>
+        <div class='stat'><div class='stat-v' id='endTotal'>0</div><div class='stat-l'>总星尘</div></div>
+      </div>
+      <div class='btn-row'>
+        <button id='againBtn' class='btn btn-green' type='button'>再来一局</button>
+        <button id='homeBtn' class='btn btn-ghost' type='button'>首页</button>
+      </div>
+      <div class='ctrl-hint'>空格 / 回车 再来一局</div>
+    </div>
+  </div>
+  <div id='claimOverlay' class='overlay claim-overlay'>
+    <div class='panel claim-panel' id='claimPanel'>
+      <div class='claim-kicker'>CLAIM</div>
+      <div class='claim-amount-wrap'>
+        <div class='claim-amount' id='claimAmount'>···</div>
+        <div class='claim-stamp' id='claimStamp'>已到账</div>
+      </div>
+      <div class='charge'><div class='charge-fill' id='chargeFill'></div></div>
+      <div class='claim-msg' id='claimMsg'>正在为你的星尘充电…</div>
+    </div>
+  </div>
+  <div id='toastHost' class='toast-host'></div>
+</div>
+<script>
+(function(){
+'use strict';
+/* ============================================================
+   CFG - all tunable demo constants in one place
+   ============================================================ */
+var CFG = {
+  HIT: 25,                 // stardust per hit (before multiplier)
+  RAIN: 50,                // stardust per coin-rain (before multiplier)
+  CLAIM: 1000,             // stardust needed to claim
+  D: 900,                  // ring collapse duration in SCALED ms (delta-time driven)
+  T_TARGET: 450,           // ring crosses target radius at (scaled ms)
+  WIN_MIN: 200,            // judgment window floor (ms)
+  WIN_MAX: 300,            // judgment window at combo 0 (ms)
+  NEWBIE_ROUNDS: 3,        // first N rounds get protection
+  NEWBIE_SPEED: 0.5,       // shrink speed during protection (halved)
+  GRACE: 100,              // ignore taps in first N scaled ms of a round (ghost-tap guard)
+  MAX_MULT: 6,             // multiplier cap
+  COMBO_STEP: 5,           // every Nth combo -> coin rain
+  HITSTOP: 60,             // full freeze on hit / claim burst (ms)
+  HIT_COINS: 12,
+  RAIN_COINS_MIN: 25,
+  RAIN_COINS_MAX: 35,
+  GRAVITY: 900,            // px/s^2
+  SHAKE_HIT: 6,
+  SHAKE_RAIN: 16,
+  SHAKE_CLAIM: 20,
+  MISS_DELAY: 520,         // ms between miss and run-end overlay
+  CLAIM_N1: 300,
+  CLAIM_N2: 250,
+  CLAIM_N3: 800,
+  CLAIM_N4: 500,
+  CLAIM_N5: 200,
+  CARD_SHARE_DELAY: 500,
+  CARD_AUTO_MS: 6000,
+  SHARE_DELAY: 700,
+  R0_FACTOR: 0.40,         // R0 = min(game-area W,H) * 0.40
+  MARGIN: 40,              // canvas overscan (screen shake never shows edges)
+  SAVE_KEY: 'boomtap.demo.v2'
+};
+
+/* ============================================================
+   utils
+   ============================================================ */
+function $(id){ return document.getElementById(id); }
+function clamp(v,a,b){ return v<a?a:(v>b?b:v); }
+function rnd(a,b){ return a+Math.random()*(b-a); }
+function easeOutCubic(t){ return 1-Math.pow(1-t,3); }
+function nowMs(){ return (window.performance && performance.now) ? performance.now() : Date.now(); }
+
+/* ============================================================
+   persistence (degrades silently in private mode)
+   ============================================================ */
+var SAVE = { rec:0, claims:0, stardust:0 };
+function loadSave(){
+  try{
+    var raw = localStorage.getItem(CFG.SAVE_KEY);
+    if(raw){
+      var o = JSON.parse(raw);
+      SAVE.rec = Math.max(0, Number(o.rec)||0);
+      SAVE.claims = Math.max(0, Number(o.claims)||0);
+      SAVE.stardust = Math.max(0, Number(o.stardust)||0);
+    }
+  }catch(e){ /* private browsing */ }
+}
+function saveNow(){
+  SAVE.stardust = Math.floor(G.balance);
+  try{ localStorage.setItem(CFG.SAVE_KEY, JSON.stringify({rec:SAVE.rec,claims:SAVE.claims,stardust:SAVE.stardust})); }
+  catch(e){}
+}
+
+/* ============================================================
+   tracking - one JSON line per event, prefixed with [BoomTap]
+   ============================================================ */
+function track(event, data){
+  var payload = {event:event, ts:Math.round(nowMs())};
+  if(data){ for(var k in data){ if(Object.prototype.hasOwnProperty.call(data,k)) payload[k]=data[k]; } }
+  try{ console.log('[BoomTap] ' + JSON.stringify(payload)); }catch(e){}
+}
+
+/* ============================================================
+   audio - Web Audio synth; silent fallback when unavailable
+   hit = crisp rising 'ding', miss = low 'buzz'
+   ============================================================ */
+var Sound = {
+  ctx:null, disabled:false,
+  ensure:function(){
+    if(this.disabled) return null;
+    try{
+      if(!this.ctx){
+        var AC = window.AudioContext || window.webkitAudioContext;
+        if(!AC){ this.disabled = true; return null; }
+        this.ctx = new AC();
+      }
+      if(this.ctx.state === 'suspended' && this.ctx.resume){ this.ctx.resume(); }
+      return this.ctx;
+    }catch(e){ this.disabled = true; return null; }
+  },
+  tone:function(freq,dur,type,vol,delay,freqEnd){
+    var c = this.ensure(); if(!c) return;
+    try{
+      var t0 = c.currentTime + (delay||0);
+      var o = c.createOscillator(), g = c.createGain();
+      o.type = type || 'triangle';
+      o.frequency.setValueAtTime(freq, t0);
+      if(freqEnd){ o.frequency.exponentialRampToValueAtTime(Math.max(20,freqEnd), t0+dur); }
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(vol||0.2, t0+0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+      o.connect(g); g.connect(c.destination);
+      o.start(t0); o.stop(t0+dur+0.05);
+    }catch(e){}
+  },
+  ding:function(combo){
+    var semi = Math.min(combo, 24);           // rises per combo, capped (ear guard)
+    var f = 523.25 * Math.pow(2, semi/12);    // C5 -> C7
+    this.tone(f, 0.12, 'triangle', 0.26);
+    this.tone(f*1.5, 0.10, 'sine', 0.12, 0.012);
+    this.tone(f*2, 0.07, 'sine', 0.07, 0.03);
+  },
+  buzz:function(){
+    this.tone(140, 0.5, 'sawtooth', 0.22, 0, 52);   // low '嗡'
+    this.tone(70, 0.5, 'square', 0.10, 0, 40);
+  },
+  rain:function(){
+    var n = [523.25, 659.25, 783.99, 1046.5, 1318.51];
+    for(var i=0;i<n.length;i++) this.tone(n[i], 0.16, 'triangle', 0.2, i*0.07);
+  },
+  claim:function(){
+    var n = [523.25, 659.25, 783.99, 1046.5];
+    for(var i=0;i<n.length;i++) this.tone(n[i], 0.3, 'triangle', 0.24, i*0.11);
+  },
+  ui:function(){ this.tone(680, 0.07, 'sine', 0.12); }
+};
+
+/* ============================================================
+   DOM refs
+   ============================================================ */
+var el = {
+  app:$('app'),
+  canvas:$('stage'), world:$('world'), hud:$('hud'), footer:$('footer'),
+  gameArea:$('game-area'), playArea:$('playArea'),
+  balance:$('balance'), best:$('bestCombo'), progFill:$('progFill'), claimBtn:$('claimBtn'),
+  tapBtn:$('tapBtn'), comboBadge:$('comboBadge'), comboVal:$('comboVal'), hint:$('hint'),
+  menu:$('menuOverlay'), menuBest:$('menuBest'), menuClaims:$('menuClaims'), menuDust:$('menuDust'),
+  startBtn:$('startBtn'),
+  end:$('endOverlay'), endDust:$('endDust'), endCombo:$('endCombo'), endTotal:$('endTotal'),
+  cardSlot:$('cardSlot'), againBtn:$('againBtn'), homeBtn:$('homeBtn'),
+  claimOverlay:$('claimOverlay'), claimPanel:$('claimPanel'), claimAmount:$('claimAmount'),
+  claimStamp:$('claimStamp'), chargeFill:$('chargeFill'), claimMsg:$('claimMsg'),
+  toastHost:$('toastHost')
+};
+
+/* ============================================================
+   number count-up - smooth rolling counters (star dust / combo / best)
+   ============================================================ */
+var tweens = [];
+function countTo(elm, to, dur){
+  to = Math.round(to);
+  for(var i=0;i<tweens.length;i++){
+    if(tweens[i].elm === elm){ tweens.splice(i,1); break; }
+  }
+  var from = parseFloat(elm.textContent);
+  if(isNaN(from)) from = 0;
+  if(from === to){ elm.textContent = String(to); return; }
+  tweens.push({elm:elm, from:from, to:to, t:0, dur:dur||420});
+}
+function updateTweens(dt){
+  for(var i=tweens.length-1;i>=0;i--){
+    var w = tweens[i];
+    w.t += dt;
+    var k = clamp(w.t/w.dur, 0, 1);
+    var e = easeOutCubic(k);
+    w.elm.textContent = String(Math.round(w.from + (w.to - w.from)*e));
+    if(k >= 1) tweens.splice(i,1);
+  }
+}
+
+/* button rebound - squash via .press, spring back via base transition */
+var pressT = null;
+function punchBtn(){
+  var b = el.tapBtn;
+  b.classList.add('press');
+  if(pressT) clearTimeout(pressT);
+  pressT = setTimeout(function(){ b.classList.remove('press'); }, 70);
+}
+
+/* combo particle halo - 8 sparks burst around the combo number */
+function spawnHalo(){
+  var r = el.comboBadge.getBoundingClientRect();
+  if(!r.width) return;
+  var cx = r.left + r.width/2, cy = r.top + r.height/2;
+  for(var i=0;i<8;i++){
+    var a = (Math.PI*2*i/8) + Math.random()*0.4;
+    var d = 34 + Math.random()*22;
+    var s = document.createElement('span');
+    s.className = 'spark';
+    s.style.left = cx + 'px';
+    s.style.top = cy + 'px';
+    s.style.setProperty('--tx', (Math.cos(a)*d).toFixed(1)+'px');
+    s.style.setProperty('--ty', (Math.sin(a)*d).toFixed(1)+'px');
+    document.body.appendChild(s);
+    (function(node){ setTimeout(function(){ if(node.parentNode) node.parentNode.removeChild(node); }, 620); })(s);
+  }
+}
+
+/* ============================================================
+   game state
+   ============================================================ */
+var G = {
+  state:'menu',       // menu | play | dying | runend | claim
+  combo:0,
+  runCombo:0,
+  runStardust:0,
+  round:0,
+  roundT:0,           // scaled elapsed ms inside current round (delta-time integrated)
+  roundActive:false,
+  hitsLanded:0,       // newbie protection counter
+  balance:0,
+  hitStop:0,
+  shake:0,
+  dyingT:0,
+  claimReady:false
+};
+var particles = [], floaters = [], flashes = [];
+var claim = null;
+var cardState = null;
+var ringPop = 999;    // ms since last ring spring pop
+
+/* ============================================================
+   canvas + layout - width/height set dynamically from #game-area (DPR aware)
+   Local coordinate space: (0,0) = top-left of #game-area.
+   ============================================================ */
+var ctx = el.canvas.getContext ? el.canvas.getContext('2d') : null;
+var gw = 0, gh = 0, dpr = 1;
+var R0 = 200, Rt = 100;
+var center = {x:0, y:0};
+
+function resize(){
+  var area = el.gameArea;
+  gw = (area && area.clientWidth)  ? area.clientWidth  : (window.innerWidth  || 360);
+  gh = (area && area.clientHeight) ? area.clientHeight : (window.innerHeight || 640);
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  var cw = gw + CFG.MARGIN*2, ch = gh + CFG.MARGIN*2;
+  el.canvas.width  = Math.round(cw*dpr);
+  el.canvas.height = Math.round(ch*dpr);
+  el.canvas.style.width  = cw+'px';
+  el.canvas.style.height = ch+'px';
+  el.canvas.style.left   = (-CFG.MARGIN)+'px';
+  el.canvas.style.top    = (-CFG.MARGIN)+'px';
+  layout();
+}
+function layout(){
+  var minDim = Math.min(gw, gh);
+  R0 = Math.min(minDim * CFG.R0_FACTOR, minDim/2 - 8);
+  if(R0 < 24) R0 = Math.max(12, minDim * 0.34);
+  Rt = R0 * (1 - CFG.T_TARGET/CFG.D);       // target radius at judgment moment
+  var btn = Math.round(clamp(minDim*0.30, 110, 200));
+  document.documentElement.style.setProperty('--btn', btn+'px');
+  var fh = (el.footer && el.footer.offsetHeight) ? el.footer.offsetHeight : 165;
+  document.documentElement.style.setProperty('--footer-h', fh+'px');
+  measureCenter();
+}
+function measureCenter(){
+  var areaR = el.gameArea.getBoundingClientRect();
+  var r = el.tapBtn.getBoundingClientRect();
+  if(r.width > 0 && r.height > 0){
+    center.x = r.left + r.width/2 - areaR.left;
+    center.y = r.top + r.height/2 - areaR.top;
+  }else{
+    center.x = gw/2;
+    center.y = gh/2;
+  }
+}
+window.addEventListener('resize', function(){ resize(); });
+window.addEventListener('orientationchange', function(){ setTimeout(resize, 250); });
+window.addEventListener('load', function(){ resize(); });
+if(window.visualViewport){ window.visualViewport.addEventListener('resize', function(){ resize(); }); }
+
+/* ============================================================
+   timing rules
+   - window: W(c) = 200..300ms, shrinks gently with combo
+   - ring radius advances by delta-time (frame-rate independent)
+   - newbie protection: first 3 rounds run at half shrink speed
+   ============================================================ */
+function windowMs(c){ return CFG.WIN_MIN + (CFG.WIN_MAX - CFG.WIN_MIN)*Math.exp(-c/6); }
+function multiplier(combo){ return Math.min(CFG.MAX_MULT, 1 + Math.floor(combo/CFG.COMBO_STEP)); }
+function roundSpeed(){ return G.hitsLanded < CFG.NEWBIE_ROUNDS ? CFG.NEWBIE_SPEED : 1; }
+function protectedNow(){ return G.hitsLanded < CFG.NEWBIE_ROUNDS; }
+
+/* ============================================================
+   HUD / footer / menu
+   ============================================================ */
+function updateHud(){
+  countTo(el.balance, Math.floor(G.balance), 420);
+  countTo(el.best, SAVE.rec, 380);
+  var pct = clamp(G.balance / CFG.CLAIM, 0, 1) * 100;
+  el.progFill.style.width = pct.toFixed(2)+'%';
+  var can = G.balance >= CFG.CLAIM;
+  el.claimBtn.disabled = !can;
+  el.claimBtn.classList.toggle('ready', can);
+}
+function updateMenuStats(){
+  el.menuBest.textContent = String(SAVE.rec);
+  el.menuClaims.textContent = String(SAVE.claims);
+  el.menuDust.textContent = String(Math.floor(G.balance));
+}
+function updateHint(){
+  if(protectedNow()){
+    var left = CFG.NEWBIE_ROUNDS - G.hitsLanded;
+    el.hint.textContent = '新手保护中：收缩减半（剩 ' + left + ' 次）· 碰金圈就点';
+  }else{
+    el.hint.textContent = '碰到金圈的瞬间点击！点哪都算 · 空格键也行';
+  }
+}
+
+/* ============================================================
+   toast
+   ============================================================ */
+function toast(msg, kind){
+  var t = document.createElement('div');
+  t.className = 'toast ' + (kind ? ' toast-'+kind : '');
+  t.textContent = msg;
+  el.toastHost.appendChild(t);
+  setTimeout(function(){ t.classList.add('out'); }, 1700);
+  setTimeout(function(){ if(t.parentNode) t.parentNode.removeChild(t); }, 2300);
+}
+
+/* ============================================================
+   particles / floaters / flashes
+   ============================================================ */
+function spawnCoins(x, y, count, spread, upBias){
+  for(var i=0;i<count;i++){
+    var a = rnd(0, Math.PI*2);
+    var sp = rnd(spread*0.35, spread);
+    particles.push({
+      kind:'coin', x:x, y:y,
+      vx:Math.cos(a)*sp, vy:Math.sin(a)*sp - rnd(upBias*0.4, upBias),
+      r:rnd(6,11), rot:rnd(0,6.28), vr:rnd(-9,9), life:0, max:rnd(0.75,1.35)
+    });
+  }
+}
+function spawnRain(count){
+  for(var i=0;i<count;i++){
+    particles.push({
+      kind:'coin', x:rnd(0, gw), y:rnd(-160,-16),
+      vx:rnd(-45,45), vy:rnd(40,130),
+      r:rnd(6,12), rot:rnd(0,6.28), vr:rnd(-7,7), life:0, max:rnd(1.3,2.0), rain:true
+    });
+  }
+}
+function spawnFloater(x, y, text, color){
+  floaters.push({x:x, y:y, text:text, color:color||'#ffe49a', life:0, max:0.95});
+}
+function spawnFlash(x, y, color, maxR){
+  flashes.push({x:x, y:y, r:10, color:color, life:0, max:0.5, maxR:maxR||160});
+}
+function updateParticles(dt){
+  for(var i=particles.length-1;i>=0;i--){
+    var p = particles[i];
+    p.life += dt;
+    if(p.life >= p.max || p.y > gh+120){ particles.splice(i,1); continue; }
+    p.vy += CFG.GRAVITY * dt/1000 * (p.rain ? 0.45 : 1);
+    p.x += p.vx*dt/1000; p.y += p.vy*dt/1000; p.rot += p.vr*dt/1000;
+  }
+}
+function updateFloaters(dt){
+  for(var i=floaters.length-1;i>=0;i--){
+    var f = floaters[i];
+    f.life += dt; f.y -= 52*dt/1000;
+    if(f.life >= f.max) floaters.splice(i,1);
+  }
+}
+function updateFlashes(dt){
+  for(var i=flashes.length-1;i>=0;i--){
+    var f = flashes[i];
+    f.life += dt; f.r += 320*dt/1000;
+    if(f.life >= f.max) flashes.splice(i,1);
+  }
+}
+
+/* ============================================================
+   game flow
+   ============================================================ */
+function startGame(){
+  G.state = 'play';
+  G.combo = 0; G.runCombo = 0; G.runStardust = 0; G.round = 0; G.hitsLanded = 0;
+  el.menu.classList.remove('show');
+  el.end.classList.remove('show');
+  el.cardSlot.innerHTML = '';
+  cardState = null;
+  el.comboVal.textContent = '0';
+  el.comboBadge.classList.remove('bad','pop','hot');
+  resize();
+  updateHud();
+  updateHint();
+  if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  track('game_start', {balance:Math.floor(G.balance)});
+  startRound();
+}
+function startRound(){
+  G.round++;
+  G.roundT = 0;
+  G.roundActive = true;
+  updateHint();
+  track('round_start', {round:G.round, speed:roundSpeed()});
+}
+function doTap(){
+  if(G.state !== 'play' || !G.roundActive) return;
+  if(G.roundT < CFG.GRACE) return;                 // ghost-tap guard, no penalty
+  punchBtn();
+  var off = G.roundT - CFG.T_TARGET;
+  var w = windowMs(G.combo);
+  track('tap', {offsetMs:Math.round(off), combo:G.combo, round:G.round});
+  if(Math.abs(off) <= w/2) onHit(off, w);
+  else onMiss(off < 0 ? 'early' : 'late');
+}
+function onHit(offset, w){
+  var perfect = Math.abs(offset) <= (w * 0.3);
+  G.hitsLanded++;
+  G.combo += 1;
+  G.runCombo = Math.max(G.runCombo, G.combo);
+  var m = multiplier(G.combo);
+  var gain = CFG.HIT * m;
+  G.balance += gain; G.runStardust += gain;
+  if(G.balance < CFG.CLAIM) G.claimReady = false;
+  if(G.balance >= CFG.CLAIM && !G.claimReady){
+    G.claimReady = true;
+    track('claim_ready', {balance:Math.floor(G.balance)});
+    toast('可以 Claim 啦！','gold');
+  }
+  updateHud();
+  G.hitStop = CFG.HITSTOP;
+  G.shake = Math.max(G.shake, CFG.SHAKE_HIT);
+  ringPop = 0;                                     // spring pop on the ring
+  Sound.ding(G.combo);                             // rising ding
+  spawnCoins(center.x, center.y, CFG.HIT_COINS, 420, 190);
+  spawnFloater(center.x, center.y - 34, '+' + gain + '星尘', '#ffe49a');
+  spawnFlash(center.x, center.y, perfect ? '#ffe08a' : 'rgba(255,255,255,.85)', 150);
+  countTo(el.comboVal, G.combo, 300);
+  el.comboBadge.classList.toggle('hot', G.combo >= 5);
+  el.comboBadge.classList.remove('bad','pop');
+  void el.comboBadge.offsetWidth;
+  el.comboBadge.classList.add('pop');
+  spawnHalo();                                     // particle halo around combo number
+  track('hit', {offsetMs:Math.round(offset), combo:G.combo, gain:gain, perfect:perfect});
+  if(G.combo > 0 && G.combo % CFG.COMBO_STEP === 0){
+    track('combo_milestone', {combo:G.combo, multiplier:m});
+    var rainGain = CFG.RAIN * m;
+    G.balance += rainGain; G.runStardust += rainGain;
+    if(G.balance < CFG.CLAIM) G.claimReady = false;
+    if(G.balance >= CFG.CLAIM && !G.claimReady){
+      G.claimReady = true;
+      track('claim_ready', {balance:Math.floor(G.balance)});
+      toast('可以 Claim 啦！','gold');
+    }
+    updateHud();
+    var count = Math.round(rnd(CFG.RAIN_COINS_MIN, CFG.RAIN_COINS_MAX));
+    spawnRain(count);
+    spawnFloater(center.x, center.y - 70, '+' + rainGain + '星尘', '#ffd76a');
+    G.shake = Math.max(G.shake, CFG.SHAKE_RAIN);
+    Sound.rain();
+    track('coin_rain', {combo:G.combo, amount:rainGain, count:count});
+  }
+  startRound();
+}
+function onMiss(reason){
+  var broken = G.combo;
+  G.roundActive = false;
+  G.state = 'dying';
+  G.dyingT = 0;
+  G.combo = 0;
+  G.shake = Math.max(G.shake, 12);
+  Sound.buzz();
+  track('miss', {reason:reason, combo:G.runCombo});
+  countTo(el.comboVal, 0, 300);
+  el.comboBadge.classList.remove('hot','pop');
+  el.comboBadge.classList.add('bad');
+  setTimeout(function(){ el.comboBadge.classList.remove('bad'); }, 520);
+  spawnFlash(center.x, center.y, 'rgba(255,75,75,.9)', 190);
+}
+function endRun(){
+  G.state = 'runend';
+  var prevRec = SAVE.rec;
+  track('game_end', {
+    runStardust:G.runStardust, runCombo:G.runCombo,
+    best:prevRec, balance:Math.floor(G.balance), reason:'miss'
+  });
+  saveNow();
+  el.endDust.textContent = String(G.runStardust);
+  el.endCombo.textContent = String(G.runCombo);
+  el.endTotal.textContent = String(Math.floor(G.balance));
+  el.end.classList.add('show');
+  if(G.runCombo > prevRec){
+    SAVE.rec = G.runCombo;
+    saveNow();
+    updateHud(); updateMenuStats();
+    track('record_broken', {combo:G.runCombo, prev:prevRec});
+    showCard(G.runCombo);
+  }
+}
+function backToMenu(){
+  G.state = 'menu';
+  el.end.classList.remove('show');
+  el.cardSlot.innerHTML = '';
+  cardState = null;
+  el.menu.classList.add('show');
+  updateMenuStats();
+}
+
+/* ============================================================
+   record scorecard
+   ============================================================ */
+function showCard(combo){
+  if(cardState) clearCardTimers();
+  el.cardSlot.innerHTML = '';
+  var card = document.createElement('div');
+  card.className = 'card';
+  card.innerHTML =
+      '<div class="card-top">🏆 新纪录!</div>' +
+      '<div class="card-combo">×<b>' + combo + '</b></div>' +
+      '<div class="card-sub">本次连击打破历史最佳</div>' +
+      '<div class="card-actions">' +
+        '<button class="btn btn-blue btn-sm" id="cardShare" type="button" disabled>分享</button>' +
+        '<button class="btn btn-ghost btn-sm" id="cardClose" type="button">关闭</button>' +
+      '</div>';
+  el.cardSlot.appendChild(card);
+  var shareBtn = card.querySelector('#cardShare');
+  var closeBtn = card.querySelector('#cardClose');
+  cardState = {combo:combo, collapsed:false, shareBtn:shareBtn, closeBtn:closeBtn, t1:null, t2:null};
+  track('card_shown', {combo:combo});
+  cardState.t1 = setTimeout(function(){
+    if(cardState && cardState.shareBtn){
+      cardState.shareBtn.disabled = false;
+      cardState.shareBtn.textContent = '分享';
+    }
+  }, CFG.CARD_SHARE_DELAY);
+  cardState.t2 = setTimeout(function(){ collapseCard('auto'); }, CFG.CARD_AUTO_MS);
+  shareBtn.addEventListener('click', function(){ onShareClicked(); });
+  closeBtn.addEventListener('click', function(){ collapseCard('manual'); });
+}
+function clearCardTimers(){
+  if(!cardState) return;
+  if(cardState.t1) clearTimeout(cardState.t1);
+  if(cardState.t2) clearTimeout(cardState.t2);
+}
+function collapseCard(reason){
+  if(!cardState || cardState.collapsed) return;
+  cardState.collapsed = true;
+  clearCardTimers();
+  cardState.shareBtn = null;
+  var combo = cardState.combo;
+  el.cardSlot.innerHTML = '';
+  var badge = document.createElement('div');
+  badge.className = 'card-badge';
+  badge.innerHTML = '🏆 新纪录 ×' + combo + ' <button class="mini-btn" id="badgeShare" type="button">分享</button>';
+  el.cardSlot.appendChild(badge);
+  badge.querySelector('#badgeShare').addEventListener('click', function(){ onShareClicked(); });
+  track('card_dismissed', {reason:reason});
+}
+function onShareClicked(){
+  if(!cardState) return;
+  if(cardState.shareBtn && cardState.shareBtn.disabled) return;
+  track('share_clicked', {combo:cardState.combo});
+  toast('正在分享…');
+  setTimeout(function(){
+    track('share_completed', {combo:cardState ? cardState.combo : 0});
+    toast('分享成功！','gold');
+    collapseCard('shared');
+  }, CFG.SHARE_DELAY);
+}
+
+/* ============================================================
+   claim flow - deterministic nodes N1..N5
+   Rule: a half-finished number is NEVER shown outside N3.
+   ============================================================ */
+function startClaim(){
+  if(G.state !== 'play' || G.balance < CFG.CLAIM) return;
+  G.state = 'claim';
+  G.roundActive = false;
+  claim = {node:'N1', t:0, amount:CFG.CLAIM, displayed:0, credited:false};
+  track('claim_started', {amount:CFG.CLAIM, balance:Math.floor(G.balance)});
+  el.claimAmount.textContent = '···';
+  el.claimStamp.classList.remove('on');
+  el.chargeFill.style.width = '0%';
+  el.claimMsg.textContent = '正在为你的星尘充电…';
+  el.claimOverlay.classList.add('show');
+}
+function updateClaim(dt){
+  if(!claim) return;
+  var c = claim;
+  c.t += dt;
+  if(c.node === 'N1'){
+    var p = clamp(c.t / CFG.CLAIM_N1, 0, 1);
+    el.chargeFill.style.width = (p*100).toFixed(1)+'%';
+    if(c.t >= CFG.CLAIM_N1){
+      c.node = 'N2'; c.t = 0;
+      el.chargeFill.style.width = '100%';
+      var gr = el.gameArea.getBoundingClientRect();
+      var r = el.claimPanel.getBoundingClientRect();
+      spawnCoins(r.left + r.width/2 - gr.left, r.top + r.height/2 - gr.top, 26, 520, 260);
+      G.hitStop = CFG.HITSTOP;
+      G.shake = CFG.SHAKE_CLAIM;
+      el.claimMsg.textContent = '爆！';
+      Sound.tone(180, 0.28, 'square', 0.16, 0, 60);
+    }
+  } else if(c.node === 'N2'){
+    if(c.t >= CFG.CLAIM_N2){ c.node = 'N3'; c.t = 0; el.claimMsg.textContent = '计数中…'; }
+  } else if(c.node === 'N3'){
+    var p3 = clamp(c.t / CFG.CLAIM_N3, 0, 1);
+    var v = Math.round(easeOutCubic(p3) * CFG.CLAIM);
+    c.displayed = v;
+    el.claimAmount.textContent = String(v);
+    if(c.t >= CFG.CLAIM_N3){
+      c.node = 'N4'; c.t = 0;
+      el.claimAmount.textContent = String(CFG.CLAIM);
+      el.claimStamp.classList.add('on');
+      Sound.claim();
+      creditClaim();
+    }
+  } else if(c.node === 'N4'){
+    if(c.t >= CFG.CLAIM_N4){ c.node = 'N5'; c.t = 0; el.claimMsg.textContent = '结算中…'; settleProgress(); }
+  } else if(c.node === 'N5'){
+    if(c.t >= CFG.CLAIM_N5){ finishClaim(); }
+  }
+}
+function creditClaim(){
+  if(claim.credited) return;
+  claim.credited = true;
+  G.balance = Math.max(0, G.balance - CFG.CLAIM);
+  SAVE.claims += 1;
+  if(G.balance < CFG.CLAIM) G.claimReady = false;
+  el.progFill.classList.add('no-anim');
+  updateHud();
+  el.progFill.style.width = '100%';
+  saveNow();
+  track('claim_success', {amount:CFG.CLAIM, balance:Math.floor(G.balance), claims:SAVE.claims});
+  toast('Claim 成功！1000 星尘已结算 · 模拟 $moca 到账','gold');
+}
+function settleProgress(){
+  el.progFill.classList.remove('no-anim');
+  updateHud();
+}
+function finishClaim(){
+  el.claimOverlay.classList.remove('show');
+  el.claimStamp.classList.remove('on');
+  claim = null;
+  G.state = 'play';
+  startRound();
+  updateMenuStats();
+}
+
+/* ============================================================
+   input - whole-screen click + touchstart, keyboard mirror
+   ============================================================ */
+function isUiTarget(t){
+  if(!t || !t.closest) return false;
+  return !!t.closest('button, a, input, select, textarea, .overlay, .card, .card-badge, .toast');
+}
+var lastTouchTs = 0;
+function handleScreen(e){
+  Sound.ensure();
+  var t = e.target;
+  var onTapBtn = !!(t && t.closest && t.closest('#tapBtn'));
+  if(!onTapBtn && isUiTarget(t)) return;         // real buttons keep their own handlers
+  if(G.state === 'play'){
+    if(e.cancelable) e.preventDefault();
+    doTap();                                      // point anywhere = valid tap
+  }
+}
+document.addEventListener('touchstart', function(e){
+  lastTouchTs = Date.now();
+  handleScreen(e);
+}, {passive:false});
+document.addEventListener('click', function(e){
+  if(Date.now() - lastTouchTs < 600) return;      // suppress ghost click after touch
+  handleScreen(e);
+});
+window.addEventListener('keydown', function(e){
+  var code = e.code || e.key;
+  if(code === 'Space' || code === ' ' || code === 'Enter' || code === 'NumpadEnter'){
+    e.preventDefault();
+    if(e.repeat) return;
+    Sound.ensure();
+    if(G.state === 'menu') startGame();
+    else if(G.state === 'play') doTap();
+    else if(G.state === 'runend') startGame();
+  }
+});
+el.startBtn.addEventListener('click', function(){ Sound.ensure(); Sound.ui(); startGame(); });
+el.againBtn.addEventListener('click', function(){ Sound.ui(); startGame(); });
+el.homeBtn.addEventListener('click', function(){ Sound.ui(); backToMenu(); });
+el.claimBtn.addEventListener('click', function(){
+  if(el.claimBtn.disabled) return;
+  Sound.ui();
+  startClaim();
+});
+
+/* ============================================================
+   rendering - all coordinates are #game-area local
+   ============================================================ */
+function ringScale(){
+  if(ringPop >= 520) return 1;
+  var k = ringPop / 520;
+  return 1 + 0.2*Math.exp(-4.2*k)*Math.cos(k*Math.PI*2.4);   // 1.2 -> 1 spring
+}
+function drawRings(now){
+  if(G.state !== 'play' && G.state !== 'dying') return;
+  if(!ctx) return;
+  var t = clamp(G.roundT, 0, CFG.D);
+  var w = windowMs(G.combo);
+  var off = t - CFG.T_TARGET;
+  var inWin = Math.abs(off) <= w/2;
+  var sc = ringScale();
+  var r = Math.max(0, R0 * (1 - t / CFG.D)) * sc;
+  var rt = Rt * sc;
+  ctx.save();
+  ctx.translate(center.x, center.y);
+  // faint start-radius guide
+  ctx.setLineDash([3,10]);
+  ctx.strokeStyle = 'rgba(255,255,255,.10)';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(0,0,R0,0,Math.PI*2); ctx.stroke();
+  ctx.setLineDash([]);
+  // rotating dashed gold target ring
+  ctx.save();
+  ctx.rotate(now/2600);
+  ctx.setLineDash([12,10]);
+  ctx.strokeStyle = inWin ? 'rgba(140,255,120,.98)' : 'rgba(255,201,60,.95)';
+  ctx.lineWidth = 5;
+  ctx.shadowColor = inWin ? 'rgba(124,255,107,.85)' : 'rgba(255,201,60,.55)';
+  ctx.shadowBlur = inWin ? 20 : 10;
+  ctx.beginPath(); ctx.arc(0,0,rt,0,Math.PI*2); ctx.stroke();
+  ctx.restore();
+  ctx.setLineDash([]);
+  // shrinking white ring (green + glow inside the hit window)
+  ctx.strokeStyle = inWin ? '#8CFF7A' : 'rgba(255,255,255,.92)';
+  ctx.lineWidth = 6;
+  ctx.shadowColor = inWin ? 'rgba(124,255,107,.95)' : 'rgba(255,255,255,0)';
+  ctx.shadowBlur = inWin ? 24 : 0;
+  ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.stroke();
+  ctx.restore();
+}
+function drawFlashes(){
+  if(!ctx) return;
+  for(var i=0;i<flashes.length;i++){
+    var f = flashes[i];
+    var k = f.life / f.max;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, 1-k);
+    ctx.strokeStyle = f.color;
+    ctx.lineWidth = 6 * (1-k) + 1;
+    ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
+}
+function drawCoins(){
+  if(!ctx) return;
+  for(var i=0;i<particles.length;i++){
+    var p = particles[i];
+    var k = Math.max(0.12, Math.abs(Math.cos(p.rot)));
+    var alpha = p.life > p.max*0.75 ? Math.max(0, 1 - (p.life - p.max*0.75)/(p.max*0.25)) : 1;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(p.x, p.y);
+    ctx.scale(k, 1);
+    ctx.shadowColor = 'rgba(255,190,60,.75)';
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = '#FFC93C';
+    ctx.strokeStyle = '#B87A00';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0,0,p.r,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#FFE9A8';
+    ctx.beginPath(); ctx.arc(0,0,p.r*0.52,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+}
+function drawFloaters(){
+  if(!ctx) return;
+  var font = (window.getComputedStyle ? getComputedStyle(document.body).fontFamily : 'sans-serif');
+  for(var i=0;i<floaters.length;i++){
+    var f = floaters[i];
+    var k = f.life / f.max;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, 1-k*k);
+    ctx.font = '900 24px ' + font;
+    ctx.textAlign = 'center';
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = 'rgba(20,30,50,.75)';
+    ctx.strokeText(f.text, f.x, f.y);
+    ctx.fillStyle = f.color;
+    ctx.fillText(f.text, f.x, f.y);
+    ctx.restore();
+  }
+}
+function render(now){
+  if(!ctx) return;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.translate(CFG.MARGIN, CFG.MARGIN);
+  ctx.clearRect(-CFG.MARGIN, -CFG.MARGIN, gw + CFG.MARGIN*2, gh + CFG.MARGIN*2);
+  drawRings(now);
+  drawFlashes();
+  drawCoins();
+  drawFloaters();
+}
+
+/* ============================================================
+   loop - delta-time driven, frame-rate independent
+   ============================================================ */
+var lastT = nowMs();
+function frame(now){
+  var dt = now - lastT; lastT = now;
+  if(dt > 50) dt = 50;
+  if(dt < 0) dt = 0;
+  if(ringPop < 999) ringPop += dt;
+  if(G.hitStop > 0){
+    G.hitStop = Math.max(0, G.hitStop - dt);
+  }else{
+    if(G.state === 'play' && G.roundActive){
+      G.roundT += dt * roundSpeed();             // radius advances with deltaTime x speed
+      if(G.roundT >= CFG.D){
+        G.roundActive = false;
+        onMiss('timeout');
+      }
+    }else if(G.state === 'dying'){
+      G.dyingT += dt;
+      if(G.dyingT >= CFG.MISS_DELAY) endRun();
+    }
+    updateClaim(dt);
+    updateParticles(dt);
+    updateFloaters(dt);
+    updateFlashes(dt);
+    if(G.shake > 0){
+      G.shake *= Math.exp(-7 * dt/1000);
+      if(G.shake < 0.2) G.shake = 0;
+    }
+  }
+  updateTweens(dt);
+  if(G.shake > 0){
+    var dx = (Math.random()-0.5)*2*G.shake;
+    var dy = (Math.random()-0.5)*2*G.shake;
+    el.world.style.transform = 'translate(' + dx.toFixed(2) + 'px,' + dy.toFixed(2) + 'px)';
+  }else if(el.world.style.transform){
+    el.world.style.transform = '';
+  }
+  render(now);
+  requestAnimationFrame(frame);
+}
+
+/* ============================================================
+   boot
+   ============================================================ */
+loadSave();
+G.balance = SAVE.stardust;
+resize();
+updateHud();
+updateMenuStats();
+updateHint();
+track('app_start', {version:'1.4.0', rec:SAVE.rec, claims:SAVE.claims, stardust:SAVE.stardust});
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
