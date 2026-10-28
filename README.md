@@ -3,9 +3,7 @@
 
 > **🎯&#x20;**&#xD83C;� BoomTap: Gamified Micro-Loop Prototype for Minds
 >
-> [[Play Demo](https://github.com/artist1016/minds-gamified-prototype)  
-> [[Feishu Portfolio](https://hcnazkqtqx69.feishu.cn/wiki/M4Amwp68Hi8E6vkwVlAcgBUmnFf)  
-> [[LinkedIn](https://www.linkedin.com/in/alex-dai01)
+> [[Play](https://3iyn7j.kicp.fun/))  
 
 <img src="https://cdn.jsdelivr.net/gh/artist1016/minds-gamified-prototype@main/demo-screenshot.png" width="100%" alt="BoomTap Demo Screenshot" />
 
